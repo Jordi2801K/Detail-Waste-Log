@@ -6,19 +6,33 @@ from openpyxl.styles import Alignment
 import io
 
 # # 데이터 프레임으로 읽는 함수
-def read_df(file) :
-    df = pd.read_excel(file, engine='pyxlsb')
+# def read_df(file) :
+#     df = pd.read_excel(file, engine='pyxlsb')
 
+#     # 엑셀 파일 불러오기 전, 필요한 탭만 추출하기 위해 탭의 리스트를 작성
+#     sheets= ["SUN", "MON", "TUE", "WED", "THUR", "FRI", "SAT"]
+
+#     # 엑셀 파일의 필요한 탭만 불러오기
+#     file_path = 'CornDog.xlsb'
+#     df_dict = pd.read_excel(file_path, engine='pyxlsb', sheet_name=sheets)
+
+#     # 불러온 파일은 딕셔너리 타입이므로 각각의 변수로 매핑
+#     dfs = []
+#     for df in df_dict.values() :
+#         dfs.append(df)
+    
+#     return dfs
+
+def read_df(file):
     # 엑셀 파일 불러오기 전, 필요한 탭만 추출하기 위해 탭의 리스트를 작성
-    sheets= ["SUN", "MON", "TUE", "WED", "THUR", "FRI", "SAT"]
+    sheets = ["SUN", "MON", "TUE", "WED", "THUR", "FRI", "SAT"]
 
-    # 엑셀 파일의 필요한 탭만 불러오기
-    file_path = 'CornDog.xlsb'
-    df_dict = pd.read_excel(file_path, engine='pyxlsb', sheet_name=sheets)
+    # 업로드된 파일에서 필요한 탭만 불러오기
+    df_dict = pd.read_excel(file, engine='pyxlsb', sheet_name=sheets)
 
     # 불러온 파일은 딕셔너리 타입이므로 각각의 변수로 매핑
     dfs = []
-    for df in df_dict.values() :
+    for df in df_dict.values():
         dfs.append(df)
     
     return dfs
