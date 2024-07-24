@@ -1,28 +1,10 @@
 import pandas as pd
 import streamlit as st
 from openpyxl import Workbook
-from openpyxl.utils.dataframe import dataframe_to_rows
-from openpyxl.styles import Alignment
+from openpyxl.styles import Alignment, Font
 import io
 
 # # 데이터 프레임으로 읽는 함수
-# def read_df(file) :
-#     df = pd.read_excel(file, engine='pyxlsb')
-
-#     # 엑셀 파일 불러오기 전, 필요한 탭만 추출하기 위해 탭의 리스트를 작성
-#     sheets= ["SUN", "MON", "TUE", "WED", "THUR", "FRI", "SAT"]
-
-#     # 엑셀 파일의 필요한 탭만 불러오기
-#     file_path = 'CornDog.xlsb'
-#     df_dict = pd.read_excel(file_path, engine='pyxlsb', sheet_name=sheets)
-
-#     # 불러온 파일은 딕셔너리 타입이므로 각각의 변수로 매핑
-#     dfs = []
-#     for df in df_dict.values() :
-#         dfs.append(df)
-    
-#     return dfs
-
 def read_df(file):
     # 엑셀 파일 불러오기 전, 필요한 탭만 추출하기 위해 탭의 리스트를 작성
     sheets = ["SUN", "MON", "TUE", "WED", "THUR", "FRI", "SAT"]
@@ -39,7 +21,10 @@ def read_df(file):
 
 
 # # 데이터 프레임 처리 함수
-def process_data(df) :
+def process_data(df, day_index):
+    # 요일 리스트 (일요일부터 토요일까지)
+    days = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY']
+    current_day = days[day_index]
 
     # Columns 숫자로 변경
     rename_col = range(len(df.columns))
@@ -52,11 +37,12 @@ def process_data(df) :
     # NAME 제거
     df = df[df.iloc[:, 0] != 'NAME']
 
-    # 표 이름 제거
-    df = df[df.iloc[:, 0] != 'ROLLER GRILL - SUNDAY']
-    df = df[df.iloc[:, 0] != 'BURRITOS - SUNDAY']
-    df = df[df.iloc[:, 0] != 'HOT TO GO - SUNDAY']
-    df = df[df.iloc[:, 0] != 'DELI EXPRESS - SUNDAY']
+    # 표 이름 제거 (요일에 맞춰 자동으로 처리)
+    df = df[df.iloc[:, 0] != f'ROLLER GRILL - {current_day}']
+    df = df[df.iloc[:, 0] != f'BURRITOS - {current_day}']
+    df = df[df.iloc[:, 0] != f'HOT TO GO - {current_day}']
+    df = df[df.iloc[:, 0] != f'DELI EXPRESS - {current_day}']
+    df = df[df.iloc[:, 0] != f'DELI EXPRESS / BIG AZ - {current_day}']
     df = df[df.iloc[:, 0] != '0x7']
 
     # NaN값 제거
@@ -68,7 +54,13 @@ def process_data(df) :
     df = df[df.iloc[:, 0] != 'BURRITOS\nHOURS WASTE %']
     df = df[df.iloc[:, 0] != 'PAPA PRIMOS\nHOURS WASTE %']
     df = df[df.iloc[:, 0] != 'DELI EXPRESS\nHOURS WASTE %']
+    df = df[df.iloc[:, 0] != f'TOTAL {current_day}\nHOURS WASTE %']
     df = df[df.iloc[:, 0] != 'TOTAL SUNDAY\nHOURS WASTE %']
+    
+    # 추가적인 총계 행 제거
+    for day in days:
+        df = df[df.iloc[:, 0] != f'TOTAL {day}']
+        df = df[df.iloc[:, 0] != 'HOURS WASTE %']
 
     # ITEM # 제거
     df = df.drop(columns = [1, 50, 51, 52], axis=1)
@@ -86,118 +78,117 @@ def process_data(df) :
     return df
 
 
-# # TOTAL WEEK BY DAY 계산 함수 (같은 시간으로 계산)
-# def cal_total_week_by_day(df) :
-#     # 시간별 DISPOSAL, PUT, WASTE 계산
-#     time_put = [0 for i in range(24)]
-#     time_disposal = [0 for i in range(24)]
-#     time_waste = [0 for i in range(24)]
+# # TOTAL WEEK BY ITEM 계산 함수
+def cal_total_week_by_item(dfs):
+    items = {}
+    days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
-#     for i in range(len(df)):
-#         for j in range(1, len(df.columns)):
-#             if pd.notna(df.iloc[i, j]):
-#                 hour = (j - 1) // 2
-#                 if (j % 2) == 1:  # 홀수 열 처리 (즉, put 열)
-#                     time_put[hour] += int(df.iloc[i, j])
-#                 else:  # 짝수 열 처리 (즉, disposal 열)
-#                     time_disposal[hour] += int(df.iloc[i, j])
+    for day_index, df in enumerate(dfs):
+        for i in range(len(df)):
+            item_name = df.iloc[i, 0]
+            if item_name not in items:
+                items[item_name] = {day: {'time_disposal': [0]*24, 'time_put': [0]*24, 'time_waste': ['0%']*24, 'total_waste': '0%'} for day in days}
 
-#     # time_waste 계산 (백분율로, 소수점 첫째 자리까지)
-#     for hour in range(24):
-#         if time_put[hour] != 0:
-#             time_waste[hour] = round((time_disposal[hour] / time_put[hour]) * 100, 1)
-#         else:
-#             time_waste[hour] = 0  # put이 0인 경우 waste도 0으로 설정
+            for j in range(1, len(df.columns)):
+                if pd.notna(df.iloc[i, j]):
+                    hour = (j - 1) // 2
+                    if (j % 2) == 1:  # 홀수 열 처리 (즉, put 열)
+                        items[item_name][days[day_index]]['time_put'][hour] += float(df.iloc[i, j])
+                    else:  # 짝수 열 처리 (즉, disposal 열)
+                        items[item_name][days[day_index]]['time_disposal'][hour] += float(df.iloc[i, j])
 
-#     # total_waste 계산 (백분율로, 소수점 첫째 자리까지)
-#     if sum(time_put) != 0:
-#         total_waste = round((sum(time_disposal) / sum(time_put)) * 100, 1)
-#     else:
-#         total_waste = 0  # time_put의 합이 0인 경우 waste도 0으로 설정
+    # Calculate waste percentages and totals
+    for item in items:
+        for day in days:
+            day_data = items[item][day]
+            for hour in range(24):
+                if hour >= 4:
+                    if day_data['time_put'][hour - 4] != 0:
+                        waste = (day_data['time_disposal'][hour] / day_data['time_put'][hour - 4]) * 100
+                        day_data['time_waste'][hour] = f"{waste:.1f}%"
+                    else:
+                        day_data['time_waste'][hour] = "0%"
+                else:
+                    day_data['time_waste'][hour] = "0%"
 
-#     return [time_disposal, time_put, time_waste, total_waste]
-
-
-# # TOTAL WEEK BY DAY 계산 함수 (4시간 전 시간으로 계산)
-def cal_total_week_by_day(df):
-    # 시간별 DISPOSAL, PUT, WASTE 계산
-    time_put = [0 for i in range(24)]
-    time_disposal = [0 for i in range(24)]
-    time_waste = ['0%' for i in range(24)]  # 문자열로 초기화
-
-    for i in range(len(df)):
-        for j in range(1, len(df.columns)):
-            if pd.notna(df.iloc[i, j]):
-                hour = (j - 1) // 2
-                if (j % 2) == 1:  # 홀수 열 처리 (즉, put 열)
-                    time_put[hour] += int(df.iloc[i, j])
-                else:  # 짝수 열 처리 (즉, disposal 열)
-                    time_disposal[hour] += int(df.iloc[i, j])
-
-    # time_waste 계산 (백분율로, 소수점 첫째 자리까지, '%' 기호 추가)
-    for hour in range(24):
-        if hour >= 4:
-            if time_put[hour - 4] != 0:
-                waste_value = round((time_disposal[hour] / time_put[hour - 4]) * 100, 1)
-                time_waste[hour] = f"{waste_value}%"
+            total_disposal = sum(day_data['time_disposal'][4:])
+            total_put = sum(day_data['time_put'][:20])
+            if total_put != 0:
+                total_waste = (total_disposal / total_put) * 100
+                day_data['total_waste'] = f"{total_waste:.1f}%"
             else:
-                time_waste[hour] = "0%"  # 4시간 전 put이 0인 경우 waste도 0%로 설정
-        else:
-            time_waste[hour] = "0%"  # 0시부터 3시까지는 이전 날의 데이터가 필요하므로 0%로 설정
+                day_data['total_waste'] = "0%"
 
-    # total_waste 계산 (백분율로, 소수점 첫째 자리까지, '%' 기호 추가)
-    total_disposal = sum(time_disposal[4:])  # 4시부터 23시까지의 disposal 합계
-    total_put = sum(time_put[:20])  # 0시부터 19시까지의 put 합계
-    if total_put != 0:
-        total_waste = f"{round((total_disposal / total_put) * 100, 1)}%"
-    else:
-        total_waste = "0%"  # put의 합이 0인 경우 waste도 0%로 설정
-
-    return [time_disposal, time_put, time_waste, total_waste]
+    return items
 
 
-# # TOTAL WEEK BY DAY 엑셀 파일로 변환하는 함수
-def create_excel_file(waste_by_day):
+# # TOTAL WASTE BY ITEM 엑셀 파일로 변환하는 함수
+def create_excel_file_by_item(waste_by_item):
     wb = Workbook()
     ws = wb.active
-    ws.title = "Weekly Waste Log"
-
+    ws.title = "Waste Log Summary by Item"
     days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
     
-    for i, day in enumerate(days):
-        start_col = 1 + i * 5  # 각 요일마다 5열씩 사용 (Hour, Disposal, Put, Waste (%), 빈열)
+    current_row = 1
 
-        # Write the day name
-        ws.cell(row=1, column=start_col, value=day)
-        ws.merge_cells(start_row=1, start_column=start_col, end_row=1, end_column=start_col + 3)
-        ws.cell(row=1, column=start_col).alignment = Alignment(horizontal="center")
+    for item, data in waste_by_item.items():
+        # Write item name with larger font and bold
+        ws.cell(row=current_row, column=1, value=f"Item: {item}")
+        ws.merge_cells(start_row=current_row, start_column=1, end_row=current_row, end_column=35)
+        cell = ws.cell(row=current_row, column=1)
+        cell.font = Font(size=14, bold=True)
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+        current_row += 2  # Add an extra empty row after the item name
 
-        time_disposal, time_put, time_waste, total_waste = waste_by_day[i]
-        
-        df = pd.DataFrame({
-            'Hour': range(1, 25),
-            'Disposal': time_disposal,
-            'Put': time_put,
-            'Waste (%)': time_waste
-        })
+        # Write day names
+        for day_index, day in enumerate(days):
+            start_col = 1 + day_index * 5
+            ws.cell(row=current_row, column=start_col, value=day)
+            ws.merge_cells(start_row=current_row, start_column=start_col, end_row=current_row, end_column=start_col + 3)
+            ws.cell(row=current_row, column=start_col).alignment = Alignment(horizontal="center", vertical="center")
+        current_row += 1
 
-        for r_idx, row in enumerate(dataframe_to_rows(df, index=False, header=True), start=2):
-            for c_idx, value in enumerate(row, start=start_col):
-                ws.cell(row=r_idx, column=c_idx, value=value)
-                ws.cell(row=r_idx, column=c_idx).alignment = Alignment(horizontal="center")
-        
-        # Write the total waste for the day
-        ws.cell(row=r_idx + 1, column=start_col, value='Total Waste (%)')
-        ws.cell(row=r_idx + 1, column=start_col + 3, value=total_waste)
-        ws.cell(row=r_idx + 1, column=start_col).alignment = Alignment(horizontal="center")
-        ws.cell(row=r_idx + 1, column=start_col + 3).alignment = Alignment(horizontal="center")
-    
+        # Write headers
+        headers = ['Hour', 'Disposal', 'Put', 'Waste (%)']
+        for day_index in range(7):
+            for header_index, header in enumerate(headers):
+                cell = ws.cell(row=current_row, column=1 + day_index * 5 + header_index, value=header)
+                cell.alignment = Alignment(horizontal="center", vertical="center")
+        current_row += 1
+
+        # Write data
+        for hour in range(24):
+            for day_index, day in enumerate(days):
+                for col_offset in range(4):
+                    cell = ws.cell(row=current_row, column=1 + day_index * 5 + col_offset)
+                    if col_offset == 0:
+                        cell.value = hour + 1
+                    elif col_offset == 1:
+                        cell.value = data[day]['time_disposal'][hour]
+                    elif col_offset == 2:
+                        cell.value = data[day]['time_put'][hour]
+                    else:
+                        cell.value = data[day]['time_waste'][hour]
+                    cell.alignment = Alignment(horizontal="center", vertical="center")
+            current_row += 1
+
+        # Write total waste
+        for day_index, day in enumerate(days):
+            cell_total = ws.cell(row=current_row, column=1 + day_index * 5, value='Total Waste (%)')
+            cell_total.alignment = Alignment(horizontal="center", vertical="center")
+            cell_value = ws.cell(row=current_row, column=4 + day_index * 5, value=data[day]['total_waste'])
+            cell_value.alignment = Alignment(horizontal="center", vertical="center")
+
+        # Add empty rows between items
+        current_row += 4  # Increased the number of empty rows for better separation
+
     # Save to a BytesIO object
     excel_file = io.BytesIO()
     wb.save(excel_file)
     excel_file.seek(0)
     
     return excel_file
+
 
 
 
@@ -214,32 +205,47 @@ if file :
     dfs = read_df(file)
 
     # 각 데이터 프레임 처리
-    for i in range(7) :
-        dfs[i] = process_data(dfs[i])
-    
-    # TOTAL WEEK BY DAY 계산
-    waste_by_day = []
     for i in range(7):
-        waste_by_day.append(cal_total_week_by_day(dfs[i]))
-    
-    # TOTAL WEEK BY DAY 엑셀 파일로 변환
-    excel_file = create_excel_file(waste_by_day)
+        dfs[i] = process_data(dfs[i], i)  # i는 0부터 6까지의 요일 인덱스
+
+    # TOTAL WEEK BY ITEM 계산
+    waste_by_item = cal_total_week_by_item(dfs)
+
+    # TOTAL WEEK BU ITEM 엑셀 파일로 변환
+    excel_file_by_item = create_excel_file_by_item(waste_by_item)
 
     # 다운로드 버튼 생성
     st.download_button(
-        label="Download detailed TOTAL WEEK BY DAY Excel file",
-        data=excel_file,
-        file_name="waste_log_summary.xlsx",  # .xlsx로 변경
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"  # MIME 타입 변경
+        label="Download daily&hourly TOTAL WEEK BY ITEM Excel file",
+        data=excel_file_by_item,
+        file_name="waste_log_summary_by_item.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
-    # TOTAL WEEK BY DAY 데이터 미리보기
-    st.subheader("Preview")
-    sunday_data = waste_by_day[0]
-    sunday_df = pd.DataFrame({
-        'Hour': range(1, 25),
-        'Disposal': sunday_data[0],
-        'Put': sunday_data[1],
-        'Waste (%)': sunday_data[2]
-    })
-    st.table(sunday_df)
+    # 데이터 미리보기
+    st.header("Preview")
+    
+    days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+    tabs = st.tabs(days)
+    
+    for day_index, tab in enumerate(tabs):
+        with tab:
+            st.subheader(f"{days[day_index]} Data")
+            
+            # 처음 2개 아이템만 선택
+            preview_items = list(waste_by_item.items())[:2]
+            
+            for item, data in preview_items:
+                st.write(f"**Item: {item}**")
+                
+                df = pd.DataFrame({
+                    'Hour': range(1, 25),
+                    'Disposal': data[days[day_index]]['time_disposal'],
+                    'Put': data[days[day_index]]['time_put'],
+                    'Waste (%)': data[days[day_index]]['time_waste']
+                })
+                
+                st.table(df)
+                
+                st.write(f"Total Waste: {data[days[day_index]]['total_waste']}")
+                st.write("---")  # 구분선 추가
